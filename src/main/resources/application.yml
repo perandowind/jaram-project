@@ -17,6 +17,17 @@ spring:
     baseline-version: 1
     clean-disabled: true
 
+  rabbitmq:
+    connection-timeout: 5s
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+
+jaram:
+  notifications:
+    enabled: false
+
 server:
   port: 8080
 
