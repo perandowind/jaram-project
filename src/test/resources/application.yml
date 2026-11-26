@@ -1,7 +1,7 @@
 spring:
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: validate
 jwt:
   secret: test-secret-test-secret-test-secret-32bytes
   ttl-seconds: 43200
