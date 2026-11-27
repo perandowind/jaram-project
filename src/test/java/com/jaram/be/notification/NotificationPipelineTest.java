@@ -29,6 +29,12 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
+import com.jaram.be.security.JwtProvider;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
@@ -44,7 +50,7 @@ import static org.awaitility.Awaitility.await;
 
 @Testcontainers
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
-@SpringBootTest(properties = {
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT, properties = {
         "jaram.notifications.enabled=true",
         "jaram.notifications.poll-delay-ms=100",
         "spring.rabbitmq.publisher-confirm-type=correlated",
@@ -77,6 +83,8 @@ class NotificationPipelineTest {
     @Autowired AuthService auth;
     @Autowired StudyService studies;
     @Autowired StudyApplicationRepository applications;
+    @LocalServerPort int port;
+    @Autowired JwtProvider jwt;
     @Autowired NotificationOutbox outbox;
     @Autowired NotificationStore store;
     @Autowired TransactionTemplate transaction;
@@ -281,14 +289,17 @@ class NotificationPipelineTest {
     }
 
     @Test
-    void signupNotifiesCurrentPresidentAndVicePresident() {
+    void signupNotifiesCurrentPresidentAndVicePresident() throws Exception {
         Member president = officer(MemberTitle.PRESIDENT, false);
         Member vicePresident = officer(MemberTitle.VICE_PRESIDENT, false);
         officer(MemberTitle.PRESIDENT, true);
 
         SignupRequest signup = new SignupRequest("신청자", "2026012345", "signup@hanyang.ac.kr",
                 "Fixture123!", 42, "컴퓨터학부", "01000000000", true, true);
-        auth.signup(signup);
+        try (BufferedReader stream = openStream(president)) {
+            auth.signup(signup);
+            assertChange(stream, president, "member.signup.requested");
+        }
         String memberId = members.findByEmail(signup.email()).orElseThrow().getId();
         await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
                 assertThat(recipients(memberId, "member.signup.requested", "/admin/applications"))
@@ -305,18 +316,47 @@ class NotificationPipelineTest {
     }
 
     @Test
-    void studyDecisionsNotifyOnlyApplicantOncePerChange() {
-        Member applicant = members.save(newMember());
+    void studyDecisionsNotifyOnlyApplicantOncePerChange() throws Exception {
+        Member applicant = newMember();
+        applicant.setApproval(MemberApproval.APPROVED);
+        applicant.setStatus(MemberStatus.ACTIVE);
+        members.save(applicant);
         String studyId = UUID.randomUUID().toString();
         StudyApplication application = applications.save(StudyApplication.create(studyId, applicant.getId(), "지원"));
-        studies.approveApplicant(application.getId());
-        studies.approveApplicant(application.getId());
-        studies.rejectApplicant(application.getId(), "반려");
+        try (BufferedReader stream = openStream(applicant)) {
+            studies.approveApplicant(application.getId());
+            assertChange(stream, applicant, "study.application.approved");
+            studies.approveApplicant(application.getId());
+            studies.rejectApplicant(application.getId(), "반려");
+            assertChange(stream, applicant, "study.application.rejected");
+        }
         studies.rejectApplicant(application.getId(), "사유 수정");
         await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
             assertThat(recipients(studyId, "study.application.approved", "/study")).containsExactly(applicant.getId());
             assertThat(recipients(studyId, "study.application.rejected", "/study")).containsExactly(applicant.getId());
         });
+    }
+
+    private BufferedReader openStream(Member member) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) URI.create(
+                "http://localhost:" + port + "/api/notifications/stream").toURL().openConnection();
+        connection.setReadTimeout(15000);
+        connection.setRequestProperty("Authorization", "Bearer " + jwt.generate(member.getId(), member.getName(), member.getEmail()));
+        assertThat(connection.getResponseCode()).isEqualTo(200);
+        BufferedReader stream = new BufferedReader(new InputStreamReader(connection.getInputStream(), StandardCharsets.UTF_8));
+        assertThat(stream.readLine()).isEqualTo(":connected");
+        assertThat(stream.readLine()).isEmpty();
+        return stream;
+    }
+
+    private void assertChange(BufferedReader stream, Member owner, String type) throws Exception {
+        assertThat(stream.readLine()).isEqualTo("event:notifications.changed");
+        String data = stream.readLine();
+        UUID id = entityManager.createQuery("""
+                select n.id from Notification n where n.recipientId = :owner and n.type = :type
+                """, UUID.class).setParameter("owner", owner.getId()).setParameter("type", type).getSingleResult();
+        assertThat(data).isEqualTo("data:{\"id\":\"" + id + "\"}");
+        assertThat(stream.readLine()).isEmpty();
     }
 
     private List<String> recipients(String resourceId, String type, String path) {

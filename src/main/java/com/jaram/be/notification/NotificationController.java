@@ -17,6 +17,10 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import org.springframework.http.MediaType;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import jakarta.servlet.http.HttpServletResponse;
+import java.io.IOException;
 import java.util.UUID;
 
 @RestController
@@ -25,6 +29,15 @@ import java.util.UUID;
 public class NotificationController {
 
     private final NotificationInboxService inbox;
+
+    private final NotificationStreams streams;
+
+    @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(@AuthenticationPrincipal CurrentMember member, HttpServletResponse response) throws IOException {
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("X-Accel-Buffering", "no");
+        return streams.subscribe(member.id());
+    }
 
     @GetMapping
     public NotificationPage list(@AuthenticationPrincipal CurrentMember member,

@@ -5,6 +5,7 @@ import com.jaram.be.member.Member;
 import com.jaram.be.member.MemberRepository;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +18,8 @@ class NotificationStore {
 
     private final MemberRepository memberRepository;
     private final NotificationRepository notificationRepository;
+
+    private final ApplicationEventPublisher events;
 
     @Transactional
     public void save(NotificationEvent event) {
@@ -36,6 +39,8 @@ class NotificationStore {
                 .map(member -> Notification.create(event, member.getId()))
                 .toList();
 
-        notificationRepository.saveAll(newNotifications);
+        for (Notification notification : notificationRepository.saveAll(newNotifications)) {
+            events.publishEvent(new NotificationStreams.Changed(notification.getRecipientId(), notification.getId()));
+        }
     }
 }

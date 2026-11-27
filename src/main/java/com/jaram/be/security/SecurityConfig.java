@@ -1,6 +1,7 @@
 package com.jaram.be.security;
 
 import com.jaram.be.member.MemberRepository;
+import jakarta.servlet.DispatcherType;
 import com.jaram.be.security.authz.Eligibility;
 import com.jaram.be.security.authz.RoleResolver;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,6 +57,9 @@ public class SecurityConfig {
             .csrf(c -> c.disable())
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(reg -> reg
+                // 최초 요청은 JWT로 인증하고, 열린 SSE 응답의 비동기 종료는 허용한다.
+                .requestMatchers(request -> request.getDispatcherType() == DispatcherType.ASYNC
+                        && "/api/notifications/stream".equals(request.getServletPath())).permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/people", "/api/seminars", "/api/studies").permitAll()
                 // 푸터의 외부 링크 — 비로그인 방문자도 보는 화면이라 읽기는 열어 둔다 (수정은 /api/admin).

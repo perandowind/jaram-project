@@ -92,6 +92,7 @@ class NotificationContractTest extends PostgresTest {
     @Test
     void everyOperationRequiresAuthentication() {
         given().port(port).when().get(INBOX).then().statusCode(401);
+        given().port(port).when().get(INBOX + "/stream").then().statusCode(401);
         given().port(port).when().get(INBOX + "/unread-count").then().statusCode(401);
         given().port(port).when().patch(INBOX + "/{id}/read", ownedId).then().statusCode(401);
     }
