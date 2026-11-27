@@ -17,6 +17,14 @@ public interface MemberRepository extends JpaRepository<Member, String> {
     List<Member> findByApproval(MemberApproval approval);
     List<Member> findByApprovalAndStatus(MemberApproval approval, MemberStatus status);
 
+    @Query("""
+            select distinct m.id from Member m join m.terms t
+            where t.endGen is null and t.department = LEADERSHIP
+              and t.title in (PRESIDENT, VICE_PRESIDENT)
+              and m.approval = APPROVED and m.status <> WITHDRAWN
+            """)
+    List<String> findSignupNotificationRecipientIds();
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select m from Member m where m.id in :ids order by m.id")
     List<Member> findNotificationRecipientsForUpdate(@Param("ids") Collection<String> ids);

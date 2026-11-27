@@ -1,5 +1,14 @@
 package com.jaram.be.notification;
 
+import com.jaram.be.auth.AuthService;
+import com.jaram.be.auth.dto.SignupRequest;
+import com.jaram.be.member.MemberApproval;
+import com.jaram.be.member.MemberStatus;
+import com.jaram.be.member.MemberDepartment;
+import com.jaram.be.member.MemberTitle;
+import com.jaram.be.study.StudyService;
+import com.jaram.be.study.StudyApplication;
+import com.jaram.be.study.StudyApplicationRepository;
 import com.jaram.be.member.Member;
 import com.jaram.be.member.MemberRepository;
 import jakarta.persistence.EntityManager;
@@ -65,6 +74,9 @@ class NotificationPipelineTest {
         registry.add("spring.rabbitmq.password", () -> "notification-test");
     }
 
+    @Autowired AuthService auth;
+    @Autowired StudyService studies;
+    @Autowired StudyApplicationRepository applications;
     @Autowired NotificationOutbox outbox;
     @Autowired NotificationStore store;
     @Autowired TransactionTemplate transaction;
@@ -266,6 +278,53 @@ class NotificationPipelineTest {
         Message deadLetter = rabbit.receive(NotificationMessaging.DEAD_LETTER_QUEUE_NAME, 10_000);
         assertThat(deadLetter).isNotNull();
         assertThat(deadLetter.getBody()).isEqualTo(malformed.getBody());
+    }
+
+    @Test
+    void signupNotifiesCurrentPresidentAndVicePresident() {
+        Member president = officer(MemberTitle.PRESIDENT, false);
+        Member vicePresident = officer(MemberTitle.VICE_PRESIDENT, false);
+        officer(MemberTitle.PRESIDENT, true);
+
+        SignupRequest signup = new SignupRequest("신청자", "2026012345", "signup@hanyang.ac.kr",
+                "Fixture123!", 42, "컴퓨터학부", "01000000000", true, true);
+        auth.signup(signup);
+        String memberId = members.findByEmail(signup.email()).orElseThrow().getId();
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
+                assertThat(recipients(memberId, "member.signup.requested", "/admin/applications"))
+                        .containsExactlyInAnyOrder(president.getId(), vicePresident.getId()));
+    }
+
+    private Member officer(MemberTitle title, boolean former) {
+        Member member = newMember();
+        member.setApproval(MemberApproval.APPROVED);
+        member.setStatus(MemberStatus.ACTIVE);
+        member.assignTerm(MemberDepartment.LEADERSHIP, title, 41);
+        if (former) member.endCurrentTerm(42);
+        return members.save(member);
+    }
+
+    @Test
+    void studyDecisionsNotifyOnlyApplicantOncePerChange() {
+        Member applicant = members.save(newMember());
+        String studyId = UUID.randomUUID().toString();
+        StudyApplication application = applications.save(StudyApplication.create(studyId, applicant.getId(), "지원"));
+        studies.approveApplicant(application.getId());
+        studies.approveApplicant(application.getId());
+        studies.rejectApplicant(application.getId(), "반려");
+        studies.rejectApplicant(application.getId(), "사유 수정");
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+            assertThat(recipients(studyId, "study.application.approved", "/study")).containsExactly(applicant.getId());
+            assertThat(recipients(studyId, "study.application.rejected", "/study")).containsExactly(applicant.getId());
+        });
+    }
+
+    private List<String> recipients(String resourceId, String type, String path) {
+        return entityManager.createQuery("""
+                select n.recipientId from Notification n
+                where n.resourceId = :resource and n.type = :type and n.targetPath = :path
+                """, String.class).setParameter("resource", resourceId).setParameter("type", type)
+                .setParameter("path", path).getResultList();
     }
 
     private Member newMember() {

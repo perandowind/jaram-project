@@ -3,6 +3,9 @@ package com.jaram.be.study;
 import com.jaram.be.common.ApiException;
 import com.jaram.be.member.Member;
 import com.jaram.be.member.MemberRepository;
+import com.jaram.be.notification.NotificationEvent;
+import com.jaram.be.notification.NotificationOutbox;
+import com.jaram.be.notification.NotificationType;
 import com.jaram.be.security.authz.Eligibility;
 import com.jaram.be.study.dto.*;
 import org.springframework.http.HttpStatus;
@@ -38,17 +41,19 @@ public class StudyService {
     private final StudyAttendanceRepository attendance;
     private final StudyRecruitmentRepository recruitment;
     private final MemberRepository members;
+    private final NotificationOutbox outbox;
     private final Eligibility eligibility;
 
     public StudyService(StudyRepository studies, StudyApplicationRepository applications,
                         StudyWeekRepository weeks, StudyAttendanceRepository attendance,
                         StudyRecruitmentRepository recruitment,
-                        MemberRepository members, Eligibility eligibility) {
+                        MemberRepository members, Eligibility eligibility, NotificationOutbox outbox) {
         this.studies = studies;
         this.applications = applications;
         this.weeks = weeks;
         this.attendance = attendance;
         this.recruitment = recruitment;
+        this.outbox = outbox;
         this.members = members;
         this.eligibility = eligibility;
     }
@@ -427,12 +432,31 @@ public class StudyService {
     public void approveApplicant(String applicationId) {
         // 정원을 보지 않는다 — cap 은 상한이 아니라 희망 인원이고, 넘겨 받을지는
         // 스터디장이 판단한다 (D9).
-        loadApplication(applicationId).approve();
+        StudyApplication application = loadApplicationForUpdate(applicationId);
+        if (application.getStatus() != ApplicationStatus.APPROVED) {
+            application.approve();
+            notifyApplicant(application, NotificationType.STUDY_APPROVED);
+        }
     }
 
     @Transactional
     public void rejectApplicant(String applicationId, String reason) {
-        loadApplication(applicationId).reject(reason);
+        StudyApplication application = loadApplicationForUpdate(applicationId);
+        boolean newlyRejected = application.getStatus() != ApplicationStatus.REJECTED;
+        application.reject(reason);
+        if (newlyRejected) {
+            notifyApplicant(application, NotificationType.STUDY_REJECTED);
+        }
+    }
+
+    private void notifyApplicant(StudyApplication application, NotificationType type) {
+        outbox.enqueue(NotificationEvent.create(type, application.getId(), application.getStudyId(),
+                List.of(application.getApplicantId())));
+    }
+
+    private StudyApplication loadApplicationForUpdate(String id) {
+        return applications.findForUpdateById(id)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "스터디 신청을 찾을 수 없습니다."));
     }
 
     // ── 파생/헬퍼 ──

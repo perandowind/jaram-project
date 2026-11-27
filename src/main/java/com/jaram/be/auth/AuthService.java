@@ -12,6 +12,9 @@ import com.jaram.be.member.MemberApproval;
 import com.jaram.be.member.MemberGrade;
 import com.jaram.be.member.MemberRepository;
 import com.jaram.be.member.MemberStatus;
+import com.jaram.be.notification.NotificationEvent;
+import com.jaram.be.notification.NotificationOutbox;
+import com.jaram.be.notification.NotificationType;
 import com.jaram.be.security.JwtProvider;
 import com.jaram.be.security.authz.Policy;
 import com.jaram.be.security.authz.RoleResolver;
@@ -35,11 +38,12 @@ public class AuthService {
     private final PasswordResetTokenRepository tokens;
     private final ResetMailSender mailSender;
     private final RoleResolver roles;
+    private final NotificationOutbox outbox;
     private final long resetTtlSeconds;
 
     public AuthService(MemberRepository members, PasswordEncoder encoder, JwtProvider jwt,
                        PasswordResetTokenRepository tokens, ResetMailSender mailSender,
-                       RoleResolver roles,
+                       RoleResolver roles, NotificationOutbox outbox,
                        @Value("${jwt.reset-ttl-seconds}") long resetTtlSeconds) {
         this.members = members;
         this.encoder = encoder;
@@ -47,6 +51,7 @@ public class AuthService {
         this.tokens = tokens;
         this.mailSender = mailSender;
         this.roles = roles;
+        this.outbox = outbox;
         this.resetTtlSeconds = resetTtlSeconds;
     }
 
@@ -69,6 +74,8 @@ public class AuthService {
         // 등급은 본인이 고른 구분으로 정한다 — 신입생만 수습회원, 재학생은 기수와 무관하게 준회원.
         m.setGrade(req.newcomer() ? MemberGrade.NEWCOMER : MemberGrade.ASSOCIATE);
         members.save(m);
+        outbox.enqueue(NotificationEvent.create(NotificationType.SIGNUP_REQUESTED, m.getId(), m.getId(),
+                members.findSignupNotificationRecipientIds()));
     }
 
     @Transactional(readOnly = true)
