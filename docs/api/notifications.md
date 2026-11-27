@@ -34,6 +34,8 @@
 
 ## 알림함 HTTP API
 
+요청·응답 스키마와 오류 응답의 기준은 [프론트엔드 OpenAPI 명세](../../../home-jaram-fe/docs/api/openapi.yaml)의 `notification` 태그다. 이 절과 웹 푸시 절은 구현할 API 계약을 설명한다.
+
 모든 요청은 기존 Bearer JWT를 사용한다. 본인의 알림만 조회하거나 수정할 수 있다.
 
 | 메서드 및 경로 | 요청과 응답 |
@@ -45,4 +47,16 @@
 
 목록의 각 항목은 `id`, `type`, `title`, `message`, `targetPath`, `resourceId`, `createdAt`, `readAt`을 반환한다. `readAt`이 `null`이면 미읽음이다. `targetPath`는 서버가 정한 사이트 내부 경로다. 알림 본문과 웹 푸시에는 반려 사유 같은 민감한 세부 정보를 담지 않는다.
 
-화면은 SSE가 처음 연결되거나 재연결되면 HTTP API를 조회한다. 변경 이벤트를 받으면 목록과 미읽음 개수를 갱신한다. 웹 푸시는 사용자가 구독한 기기에 같은 알림을 전달하며, 푸시 재시도는 알림 저장과 독립적으로 처리한다.
+SSE는 기존 Bearer JWT를 헤더로 전달하는 클라이언트로 연결한다. 화면은 연결에 성공한 직후와 재연결 시 목록과 미읽음 개수를 조회한다. 변경 이벤트를 받으면 목록과 미읽음 개수를 갱신한다.
+
+## 웹 푸시 구독 API
+
+| 메서드 및 경로 | 요청과 응답 |
+|---|---|
+| `GET /api/notifications/push/public-key` | `200` 응답은 `{ "publicKey": "…" }`. 브라우저 구독에 사용하는 VAPID 공개 키다. |
+| `POST /api/notifications/push/subscriptions` | 브라우저에서 발급한 구독의 `endpoint`, `keys.p256dh`, `keys.auth`, 선택적인 `expirationTime`을 보낸다. `200` 응답은 `{ "id": "구독 UUID" }`. 동일 계정의 동일 endpoint는 갱신하며, 다른 계정에 이미 등록되어 있으면 `409`를 반환한다. |
+| `DELETE /api/notifications/push/subscriptions/{id}` | 본인 구독을 제거한다. 본인 구독이 이미 없으면 동일하게 `204`를 반환한다. 화면에서는 브라우저 구독도 해제한다. |
+
+모든 요청은 Bearer JWT가 필요하다. 구독 등록은 지원하는 푸시 서비스의 HTTPS endpoint만 받는다. 발송 시에도 대상을 검증하고 리디렉션을 따르지 않는다. 구독 인증 시크릿과 endpoint는 응답이나 운영 로그에 노출하지 않는다.
+
+웹 푸시는 알림을 저장한 뒤 구독한 기기로 전달한다. 푸시 실패 기록과 알림함의 읽음 상태는 각각 관리한다.

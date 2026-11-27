@@ -61,6 +61,12 @@ class Notification {
         this.createdAt = Instant.now();
     }
 
+    void markRead() {
+        if (readAt == null) {
+            readAt = Instant.now();
+        }
+    }
+
     static Notification create(NotificationEvent event, String recipientId) {
         return new Notification(event, recipientId);
     }

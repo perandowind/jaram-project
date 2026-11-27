@@ -48,6 +48,9 @@ class AuthorizationCoverageTest extends PostgresTest {
 
     /** 로그인만으로 통과하는 것이 의도인 핸들러. 권한이 아니라 1층 자격이 가른다. */
     private static final Set<String> AUTHENTICATED_ONLY = Set.of(
+            "NotificationController#list",
+            "NotificationController#unreadCount",
+            "NotificationController#markRead",
             "MeController#get",
             "MeController#update",
             "MeController#withdraw",
