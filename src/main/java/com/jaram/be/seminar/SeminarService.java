@@ -43,17 +43,20 @@ public class SeminarService {
     private final AttendanceRepository attendances;
     private final MemberRepository members;
     private final Eligibility eligibility;
+    private final SeminarNotifications notifications;
     private final long windowMinutes;
 
     public SeminarService(SeminarRepository seminars,
                           AttendanceRepository attendances,
                           MemberRepository members,
                           Eligibility eligibility,
+                          SeminarNotifications notifications,
                           @Value("${seminar.attendance-window-minutes:120}") long windowMinutes) {
         this.seminars = seminars;
         this.attendances = attendances;
         this.members = members;
         this.eligibility = eligibility;
+        this.notifications = notifications;
         this.windowMinutes = windowMinutes;
     }
 
@@ -85,6 +88,7 @@ public class SeminarService {
         s.setDescription(req.description());
         s.approve();
         Seminar saved = seminars.save(s);
+        notifications.confirmed(saved, Instant.now());
         return toResponse(saved, createdById);
     }
 
@@ -134,7 +138,7 @@ public class SeminarService {
 
     @Transactional
     public SeminarResponse resubmit(String id, SeminarCreateRequest req, String callerId) {
-        Seminar s = seminars.findById(id)
+        Seminar s = seminars.findForUpdate(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "세미나를 찾을 수 없습니다."));
         // 소유자 판정은 @PreAuthorize 로 올라갔다 — 두 곳에 두면 SEMINAR_EDIT 보유자가
         // 애너테이션은 통과하고 여기서 막히는 모순이 생긴다.
@@ -178,15 +182,18 @@ public class SeminarService {
 
     @Transactional
     public SeminarResponse approve(String id) {
-        Seminar s = seminars.findById(id)
+        Seminar s = seminars.findForUpdate(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "세미나를 찾을 수 없습니다."));
-        s.approve();
+        if (s.getApprovalStatus() != ApprovalStatus.APPROVED) {
+            s.approve();
+            notifications.confirmed(s, Instant.now());
+        }
         return toResponse(s, null);
     }
 
     @Transactional
     public SeminarResponse reject(String id, String reason) {
-        Seminar s = seminars.findById(id)
+        Seminar s = seminars.findForUpdate(id)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", "세미나를 찾을 수 없습니다."));
         s.reject(reason);
         return toResponse(s, null);

@@ -357,7 +357,7 @@ public class AdminBatchExecutor {
                 }
             }
             case seminars -> {
-                if (seminars.findById(id).isEmpty()) { errors.put("id", "대상을 찾을 수 없습니다."); return errors; }
+                if (seminars.findForUpdate(id).isEmpty()) { errors.put("id", "대상을 찾을 수 없습니다."); return errors; }
                 attendances.deleteAll(attendances.findBySeminarIdOrderByAtAsc(id));
                 // 슬롯이 없어진 세미나를 가리키면 취소도 재제출도 막힌다. 점유는 남기고 링크만 끊는다.
                 for (Schedule sch : schedules.findBySlotsSeminarId(id)) {

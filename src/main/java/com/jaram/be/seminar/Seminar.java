@@ -1,12 +1,15 @@
 package com.jaram.be.seminar;
 
 import jakarta.persistence.*;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
 @Entity
 @Table(name = "seminar")
 public class Seminar {
+
+    private static final Duration REMINDER_LEAD_TIME = Duration.ofHours(24);
 
     @Id
     private String id;
@@ -30,6 +33,12 @@ public class Seminar {
 
     @Column(length = 1000)
     private String rejectReason;     // approvalStatus==REJECTED일 때만
+
+    private boolean creationNotificationRecorded;
+    private Instant reminderDueAt;
+    private Instant startNotificationDueAt;
+    private boolean reminderRecorded;
+    private boolean startNotificationRecorded;
 
     private String createdById;
     private Instant createdAt = Instant.now();
@@ -98,12 +107,60 @@ public class Seminar {
         this.rejectReason = null;
     }
 
+    boolean recordCreationNotification() {
+        if (creationNotificationRecorded) return false;
+        creationNotificationRecorded = true;
+        return true;
+    }
+
+    void refreshNotificationSchedule(Instant now) {
+        clearNotificationSchedule();
+        if (approvalStatus != ApprovalStatus.APPROVED || startsAt == null || startsAt.isBefore(now)) {
+            return;
+        }
+        Instant reminderAt = startsAt.minus(REMINDER_LEAD_TIME);
+        if (!reminderRecorded && !reminderAt.isBefore(now)) {
+            reminderDueAt = reminderAt;
+        }
+        if (!startNotificationRecorded) {
+            startNotificationDueAt = startsAt;
+        }
+    }
+
+    boolean recordDueReminder(Instant now) {
+        if (reminderDueAt == null || reminderDueAt.isAfter(now)) return false;
+        Instant dueAt = reminderDueAt;
+        reminderDueAt = null;
+        if (approvalStatus != ApprovalStatus.APPROVED || startsAt == null
+                || !now.isBefore(startsAt) || !dueAt.equals(startsAt.minus(REMINDER_LEAD_TIME))) {
+            return false;
+        }
+        reminderRecorded = true;
+        return true;
+    }
+
+    boolean recordDueStartNotification(Instant now) {
+        if (startNotificationDueAt == null || startNotificationDueAt.isAfter(now)) return false;
+        Instant dueAt = startNotificationDueAt;
+        startNotificationDueAt = null;
+        if (approvalStatus != ApprovalStatus.APPROVED || !dueAt.equals(startsAt)) return false;
+        startNotificationRecorded = true;
+        return true;
+    }
+
+    private void clearNotificationSchedule() {
+        reminderDueAt = null;
+        startNotificationDueAt = null;
+    }
+
     public void reject(String reason) {
+        clearNotificationSchedule();
         this.approvalStatus = ApprovalStatus.REJECTED;
         this.rejectReason = reason;
     }
 
     public void resubmit() {
+        clearNotificationSchedule();
         this.approvalStatus = ApprovalStatus.PENDING;
         this.rejectReason = null;
     }
