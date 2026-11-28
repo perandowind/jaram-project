@@ -8,6 +8,9 @@
 | `seminar.created` | 세미나 개설 성공 | 발송 시점에 `ACTIVE`인 부원 | `/seminar` |
 | `seminar.reminder` | 세미나 시작 24시간 전 | 발송 시점에 `ACTIVE`인 부원 | `/seminar` |
 | `seminar.started` | 세미나 시작 시각 | 발송 시점에 `ACTIVE`인 부원 | `/seminar` |
+| `study.creation.requested` | 스터디 개설 신청 접수 성공 | 개설 승인 권한이 있는 관리자 | `/admin/studies` |
+| `study.opened` | 비공개 상태의 스터디가 공개 상태로 전환 | `ACTIVE` 상태의 모든 회원 | `/study` |
+| `study.application.requested` | 스터디 지원 접수 성공 | 해당 스터디장 | `/study` |
 | `study.application.approved` | 지원 상태가 승인으로 변경 | 해당 신청자 | `/study` |
 | `study.application.rejected` | 지원 상태가 반려로 변경 | 해당 신청자 | `/study` |
 
@@ -27,6 +30,7 @@
 }
 ```
 
+- 새 스터디 알림 이벤트는 선택 필드 `studyTitle`에 이벤트 발생 시점의 제목을 담는다.
 - `eventId`는 UUID이며 발행 재시도와 재처리에서 유지한다. 소비자는 `eventId + recipientId`로 중복을 방지한다.
 - `subjectId`는 가입 신청을 한 회원, 세미나 또는 스터디 지원 건의 식별자다. `resourceId`는 이동할 화면의 대상 식별자다. `recipientIds`는 대상 회원 ID 배열이다. 역할 기반 수신자는 발행용 이벤트를 기록할 때 조회한다.
 - 날짜·시각은 UTC ISO 8601로 주고받는다. 가입 신청과 스터디 결과 등 즉시 이벤트는 업무 변경과 같은 DB 트랜잭션에서 Outbox에 기록한다.

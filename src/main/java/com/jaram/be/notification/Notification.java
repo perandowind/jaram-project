@@ -55,7 +55,9 @@ class Notification {
         this.recipientId = recipientId;
         this.type = notificationType.routingKey();
         this.title = notificationType.getTitle();
-        this.message = notificationType.getMessage();
+        this.message = event.studyTitle() == null
+                ? notificationType.getMessage()
+                : notificationType.getMessage() + " " + event.studyTitle();
         this.targetPath = notificationType.getTargetPath();
         this.resourceId = event.resourceId();
         this.createdAt = Instant.now();

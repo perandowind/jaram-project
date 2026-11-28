@@ -3,6 +3,11 @@ package com.jaram.be.study;
 import com.jaram.be.common.ApiException;
 import com.jaram.be.member.Member;
 import com.jaram.be.member.MemberRepository;
+import com.jaram.be.member.MemberApproval;
+import com.jaram.be.member.MemberStatus;
+import com.jaram.be.security.authz.Permission;
+import com.jaram.be.security.authz.Policy;
+import com.jaram.be.security.authz.RoleResolver;
 import com.jaram.be.notification.NotificationEvent;
 import com.jaram.be.notification.NotificationOutbox;
 import com.jaram.be.notification.NotificationType;
@@ -43,11 +48,12 @@ public class StudyService {
     private final MemberRepository members;
     private final NotificationOutbox outbox;
     private final Eligibility eligibility;
+    private final RoleResolver roles;
 
     public StudyService(StudyRepository studies, StudyApplicationRepository applications,
                         StudyWeekRepository weeks, StudyAttendanceRepository attendance,
                         StudyRecruitmentRepository recruitment,
-                        MemberRepository members, Eligibility eligibility, NotificationOutbox outbox) {
+                        MemberRepository members, Eligibility eligibility, NotificationOutbox outbox, RoleResolver roles) {
         this.studies = studies;
         this.applications = applications;
         this.weeks = weeks;
@@ -56,6 +62,7 @@ public class StudyService {
         this.outbox = outbox;
         this.members = members;
         this.eligibility = eligibility;
+        this.roles = roles;
     }
 
     // ── UC-T3: 개설 신청 ──
@@ -73,6 +80,13 @@ public class StudyService {
                 req.schedule(), req.place(), req.mode(), req.intro(), req.contact(), leaderId));
         req.weeks().forEach(w -> weeks.save(
                 StudyWeek.create(saved.getId(), w.weekNo(), w.title(), w.content())));
+        List<String> reviewers = members.findByApproval(MemberApproval.APPROVED).stream()
+                .filter(member -> member.getStatus() != MemberStatus.WITHDRAWN)
+                .filter(member -> Policy.permissionsOf(roles.rolesOf(member)).contains(Permission.STUDY_APPROVE))
+                .map(Member::getId)
+                .toList();
+        outbox.enqueue(NotificationEvent.create(NotificationType.STUDY_CREATION_REQUESTED,
+                saved.getId(), saved.getId(), reviewers, saved.getTitle()));
         return toResponse(saved, members.findById(leaderId).orElse(null), leaderId);
     }
 
@@ -211,7 +225,9 @@ public class StudyService {
         applications.findByStudyIdAndApplicantId(studyId, applicantId).ifPresent(a -> {
             throw new ApiException(HttpStatus.CONFLICT, "ALREADY_APPLIED", "이미 지원한 스터디입니다.");
         });
-        applications.save(StudyApplication.create(studyId, applicantId, motive));
+        StudyApplication application = applications.save(StudyApplication.create(studyId, applicantId, motive));
+        outbox.enqueue(NotificationEvent.create(NotificationType.STUDY_APPLICATION_REQUESTED,
+                application.getId(), studyId, List.of(study.getLeaderId()), study.getTitle()));
     }
 
     // ── UC-T4: 내 활동 ──
@@ -262,7 +278,19 @@ public class StudyService {
 
     // ── UC-T6: 개설 승인/거절 ──
     @Transactional
-    public void approveStudy(String studyId) { loadStudy(studyId).approve(); }
+    public void approveStudy(String studyId) {
+        Study study = loadStudy(studyId);
+        StudyStatus previousStatus = study.getStatus();
+        study.approve();
+        notifyIfPublished(study, previousStatus);
+    }
+
+    public void notifyIfPublished(Study study, StudyStatus previousStatus) {
+        if (!BROWSABLE.contains(previousStatus) && BROWSABLE.contains(study.getStatus())) {
+            outbox.enqueue(NotificationEvent.create(NotificationType.STUDY_OPENED,
+                    study.getId(), study.getId(), members.findIdsByStatus(MemberStatus.ACTIVE), study.getTitle()));
+        }
+    }
 
     @Transactional
     public void rejectStudy(String studyId, String reason) { loadStudy(studyId).reject(reason); }

@@ -17,6 +17,7 @@ import com.jaram.be.study.StudyApplication;
 import com.jaram.be.study.StudyApplicationRepository;
 import com.jaram.be.study.StudyRepository;
 import com.jaram.be.study.StudyStatus;
+import com.jaram.be.study.StudyService;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
@@ -40,6 +41,7 @@ public class AdminBatchExecutor {
     private final SeminarRepository seminars;
     private final AttendanceRepository attendances;
     private final StudyRepository studies;
+    private final StudyService studyService;
     private final StudyApplicationRepository applications;
     private final ScheduleRepository schedules;
     private final AdminSettingsService settings;
@@ -50,11 +52,12 @@ public class AdminBatchExecutor {
                               StudyApplicationRepository applications,
                               ScheduleRepository schedules,
                               AdminSettingsService settings,
-                              MemberPurger purger) {
+                              MemberPurger purger, StudyService studyService) {
         this.members = members;
         this.seminars = seminars;
         this.attendances = attendances;
         this.studies = studies;
+        this.studyService = studyService;
         this.applications = applications;
         this.schedules = schedules;
         this.settings = settings;
@@ -303,7 +306,11 @@ public class AdminBatchExecutor {
                 default -> errors.put(k, "수정할 수 없는 필드입니다.");
             }
         });
-        if (errors.isEmpty()) actions.forEach(Runnable::run);
+        if (errors.isEmpty()) {
+            StudyStatus previousStatus = s.getStatus();
+            actions.forEach(Runnable::run);
+            studyService.notifyIfPublished(s, previousStatus);
+        }
         return errors;
     }
 

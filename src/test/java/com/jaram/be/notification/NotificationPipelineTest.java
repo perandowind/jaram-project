@@ -7,6 +7,7 @@ import com.jaram.be.member.MemberStatus;
 import com.jaram.be.member.MemberDepartment;
 import com.jaram.be.member.MemberTitle;
 import com.jaram.be.study.StudyService;
+import com.jaram.be.study.dto.StudyCreateRequest;
 import com.jaram.be.study.StudyApplication;
 import com.jaram.be.study.StudyApplicationRepository;
 import com.jaram.be.member.Member;
@@ -357,6 +358,58 @@ class NotificationPipelineTest {
                 """, UUID.class).setParameter("owner", owner.getId()).setParameter("type", type).getSingleResult();
         assertThat(data).isEqualTo("data:{\"id\":\"" + id + "\"}");
         assertThat(stream.readLine()).isEmpty();
+    }
+
+    @Test
+    void studyCreationPublicationAndApplicationReachTheirRecipients() {
+        Member president = officer(MemberTitle.PRESIDENT, false);
+        Member academicLead = newMember();
+        academicLead.setApproval(MemberApproval.APPROVED);
+        academicLead.setStatus(MemberStatus.ACTIVE);
+        academicLead.assignTerm(MemberDepartment.ACADEMIC, MemberTitle.LEAD, 41);
+        members.save(academicLead);
+
+        Member leader = newMember();
+        leader.setApproval(MemberApproval.APPROVED);
+        leader.setStatus(MemberStatus.ACTIVE);
+        members.save(leader);
+        Member applicant = newMember();
+        applicant.setApproval(MemberApproval.APPROVED);
+        applicant.setStatus(MemberStatus.ACTIVE);
+        members.save(applicant);
+
+        List<String> activeIds = members.findIdsByStatus(MemberStatus.ACTIVE);
+        String title = "알림 통합 테스트 스터디";
+        List<String> reviewers = members.findByApproval(MemberApproval.APPROVED).stream()
+                .filter(member -> member.getStatus() != MemberStatus.WITHDRAWN)
+                .filter(member -> member.getTitle() == MemberTitle.PRESIDENT
+                        || member.getTitle() == MemberTitle.VICE_PRESIDENT
+                        || (member.getDepartment() == MemberDepartment.ACADEMIC && member.getTitle() == MemberTitle.LEAD))
+                .map(Member::getId).toList();
+
+        studies.setRecruitmentOpen(true);
+        String studyId = studies.create(new StudyCreateRequest(title, List.of("Java"), 2,
+                "스터디 소개", "금요일", "온라인", "ONLINE", "연락처",
+                List.of(new StudyCreateRequest.WeekInput(1, "첫 주", null))), leader.getId()).id();
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() ->
+                assertThat(recipients(studyId, "study.creation.requested", "/admin/studies"))
+                        .containsExactlyInAnyOrderElementsOf(reviewers)
+                        .contains(president.getId(), academicLead.getId())
+                        .doesNotContain(leader.getId(), applicant.getId()));
+
+        studies.approveStudy(studyId);
+        studies.approveStudy(studyId);
+        studies.apply(studyId, applicant.getId(), "지원");
+        await().atMost(Duration.ofSeconds(15)).untilAsserted(() -> {
+            assertThat(recipients(studyId, "study.opened", "/study"))
+                    .containsExactlyInAnyOrderElementsOf(activeIds);
+            assertThat(recipients(studyId, "study.application.requested", "/study"))
+                    .containsExactly(leader.getId());
+            assertThat(entityManager.createQuery("""
+                    select distinct n.message from Notification n where n.resourceId = :studyId and n.type = 'study.opened'
+                    """, String.class).setParameter("studyId", studyId).getResultList())
+                    .containsExactly("새로운 스터디가 개설되었습니다! " + title);
+        });
     }
 
     private List<String> recipients(String resourceId, String type, String path) {

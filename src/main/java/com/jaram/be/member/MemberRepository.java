@@ -25,6 +25,9 @@ public interface MemberRepository extends JpaRepository<Member, String> {
             """)
     List<String> findSignupNotificationRecipientIds();
 
+    @Query("select m.id from Member m where m.status = :status")
+    List<String> findIdsByStatus(@Param("status") MemberStatus status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select m from Member m where m.id in :ids order by m.id")
     List<Member> findNotificationRecipientsForUpdate(@Param("ids") Collection<String> ids);
