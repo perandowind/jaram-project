@@ -25,6 +25,14 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-amqp'
+	implementation('nl.martijndwars:web-push:5.1.2') {
+		// Use the library's encryption and VAPID support with the JDK HTTP client.
+		exclude group: 'org.apache.httpcomponents', module: 'httpasyncclient'
+		exclude group: 'org.asynchttpclient', module: 'async-http-client'
+		exclude group: 'com.beust', module: 'jcommander'
+	}
+	implementation 'org.bitbucket.b_c:jose4j:0.9.6'
+	implementation 'org.bouncycastle:bcprov-jdk18on:1.80.2'
 
 	// Lombok
 	compileOnly 'org.projectlombok:lombok'

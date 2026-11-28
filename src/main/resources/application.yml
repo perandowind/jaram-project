@@ -27,6 +27,10 @@ spring:
 jaram:
   notifications:
     enabled: false
+    push:
+      vapid-public-key: ${JARAM_NOTIFICATIONS_PUSH_VAPID_PUBLIC_KEY:}
+      vapid-private-key: ${JARAM_NOTIFICATIONS_PUSH_VAPID_PRIVATE_KEY:}
+      vapid-subject: ${JARAM_NOTIFICATIONS_PUSH_VAPID_SUBJECT:}
 
 server:
   port: 8080

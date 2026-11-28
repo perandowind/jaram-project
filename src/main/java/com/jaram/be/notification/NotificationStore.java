@@ -3,6 +3,7 @@ package com.jaram.be.notification;
 
 import com.jaram.be.member.Member;
 import com.jaram.be.member.MemberRepository;
+import com.jaram.be.notification.push.PushDelivery;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -41,6 +42,9 @@ class NotificationStore {
 
         for (Notification notification : notificationRepository.saveAll(newNotifications)) {
             events.publishEvent(new NotificationStreams.Changed(notification.getRecipientId(), notification.getId()));
+            events.publishEvent(new PushDelivery(notification.getId(), notification.getRecipientId(),
+                    new PushDelivery.Payload(notification.getTitle(), notification.getMessage(),
+                            notification.getTargetPath())));
         }
     }
 }

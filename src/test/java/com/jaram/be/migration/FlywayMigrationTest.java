@@ -52,7 +52,7 @@ class FlywayMigrationTest extends PostgresTest {
 
     @Test
     void emptyDatabaseMigratesOnceAndPreservesDataOnRestart() {
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(3);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(4);
         insertMember();
         assertThat(flyway.migrate().migrationsExecuted).isZero();
         assertMemberPreserved();
@@ -71,7 +71,7 @@ class FlywayMigrationTest extends PostgresTest {
         createExistingDatabase();
         executeDdl("create table legacy_marker (id integer)");
         flyway.baseline();
-        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(2);
+        assertThat(flyway.migrate().migrationsExecuted).isEqualTo(3);
         assertMemberPreserved();
         transaction.executeWithoutResult(status -> {
             selectSchema();
@@ -80,7 +80,7 @@ class FlywayMigrationTest extends PostgresTest {
                     select type, version from flyway_schema_history where success order by installed_rank
                     """, Object[].class).getResultList();
             assertThat(history).extracting(row -> tuple(row[0], row[1]))
-                    .containsExactly(tuple("BASELINE", "1"), tuple("SQL", "2"), tuple("SQL", "3"));
+                    .containsExactly(tuple("BASELINE", "1"), tuple("SQL", "2"), tuple("SQL", "3"), tuple("SQL", "4"));
             assertThat(session.createNativeQuery("select id from legacy_marker", Integer.class).getResultList())
                     .isEmpty();
         });
